@@ -22,6 +22,7 @@ usage: oc-context <cmd>|<context>
 help              show usage information
 list              list all availabe contexts
 create <context>  create a new context
+import <context>  import current context
 edit <context>    edit config
 delete <context>  deletes a context
 [use] <context>   use a context
@@ -32,19 +33,19 @@ EOF
 }
 
 function read_var() {
-    cat "$1" | grep -e "^\\(export *\\)\\?$2=" | sed 's/[^=]*=\(.*\)/\1/'
+    cat "$1" | grep -e "^\\(export *\\)\\?$2=" | sed 's/[^=]*=\(.*\)/\1/' || echo "not set"
 }
 
 function list() {
-    (   echo "NAME" "URL" "VERSION" "USER"
+    (   echo -e "NAME|CONSOLE|VERSION|USER"
         for p in $CFG/*; do
-            c=$(basename $p)
-            OC_URL=$(read_var "$p/env" OC_URL)
+            OC_NAME=$(basename $p)
+            OC_CONSOLE=$(read_var "$p/env" OC_CONSOLE)
             OC_VERSION=$(read_var "$p/env" OC_VERSION)
             OC_USER=$(read_var "$p/env" OC_USER)
-            echo "$c" "$OC_URL" "$OC_VERSION" "$OC_USER"
+            echo -e "$OC_NAME|$OC_CONSOLE|$OC_VERSION|$OC_USER"
         done
-    ) | column -t
+    ) | column -t -s '|'
 }
 
 function select_context() {
@@ -122,7 +123,6 @@ EOF
 	oc adm create-kubeconfig --client-certificate $CFG/$OC_NAME/$OC_USER.crt --client-key $CFG/$OC_NAME/$OC_USER.key --certificate-authority $CFG/$OC_NAME/$OC_USER.crt --master=$MASTER_URL --kubeconfig $CFG/$OC_NAME/.kubeconfig
 
 	sed '/certificate-authority-data/d' -i $CFG/$OC_NAME/.kubeconfig
-    
 }
 
 function use_context() {
@@ -146,18 +146,18 @@ function use_context() {
               echo "Certificate will expire in less than 7 days. Creating new certificate."
               create_cert "$1"
           fi
-          exec $SHELL
         else
           echo "Certificate is expired. Fallback to next method."
         fi
     fi
 
-    if [[ "$OC_TOKEN_URL" != "" ]]; then
-        which gnome-open &> /dev/null && 
-            gnome-open "$OC_TOKEN_URL"
-    else
-        password=$(eval $OC_PW_FUNCTION)
-        oc login "$OC_URL" --username=$OC_USER --password=$password
+    if ! oc whoami &>/dev/null; then
+       password=$(eval $OC_PW_FUNCTION) && 
+         oc login "$OC_URL" --username=$OC_USER --password=$password || true
+    fi
+
+    if oc whoami &>/dev/null; then
+        oc project
     fi
 
     exec $SHELL
@@ -198,6 +198,51 @@ EOF
    edit_context "$OC_NAME"
 }
 
+function discover_version() {
+    oc version | grep "Server Version:" | sed 's/Server Version: \([^.]*\.[^.]*\).*/\1/' ||
+    oc version | grep "Kubernetes Version" |  sed 's/Kubernetes Version: v1\.\([^.]*\).*/3.\1/'
+}
+
+function discover_token_url() {
+    oc login -u invalid_user -p invalid_password | grep "You must obtain" | sed 's/You must obtain an API token by visiting //'
+}
+
+function discover_registry() {
+    IS=$(oc get is -o custom-columns=n:metadata.name --no-headers -n openshift | head -n1 || true)
+    [[ ! -z "$IS" ]] && oc get is $IS -n openshift -ojson | jq -r '.status.publicDockerImageRepository' | cut -f1 -d"/" || true
+}
+
+function import_context() {
+    OC_NAME=$1
+    [[ "$OC_NAME" == "" ]] && usage
+    oc whoami &> /dev/null || (echo "You must be logged in to a server!" && exit 1)
+
+    [[ -e "$CFG/$OC_NAME/env" ]] && echo "Context $OC_NAME already exists" && exit 1
+
+    mkdir -p "$CFG/$OC_NAME"
+    touch "$CFG/$OC_NAME/.kubeconfig"
+
+cat <<EOF > "$CFG/$OC_NAME/env"
+export OC_VERSION=$(discover_version)
+export OC_URL=$(oc whoami --show-server)
+export OC_USER=$(oc whoami)
+
+#OC_PW_FUNCTION="echo my_insecure_password"
+#OC_PW_FUNCTION="systemd-ask-password password:"
+#OC_PW_FUNCTION="pass openshift/sandbox/username"
+export OC_TOKEN_URL=$(discover_token_url)
+
+# create user certificate first with 'oc-context create-cert'
+export OC_USE_CLIENT_CERTIFICATE=false
+
+# export all variables you want to have in your context
+export OC_CONSOLE=$(oc whoami --show-server)
+export OC_REGISTRY=$(discover_registry)
+EOF
+
+   edit_context "$OC_NAME"
+}
+
 function delete_context() {
     OC_NAME=$1
     [[ "$OC_NAME" == "" ]] && usage
@@ -214,6 +259,7 @@ case "$1" in
     list) list;;
     help) usage;;
     create) create_context "$2";;
+    import) import_context "$2";;
     edit) edit_context "${2-$OC_NAME}";;
     delete) delete_context "$2";;
     use) use_context "$2";;
