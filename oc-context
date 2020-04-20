@@ -1,0 +1,222 @@
+#!/bin/bash
+set -eo pipefail
+shopt -s nullglob
+
+CFG="$HOME/.config/oc-context"
+EDITOR=${EDITOR-vi}
+
+function banner() {
+    cat <<'EOF'
+  ___                 ___ _    _  __ _                _           _   
+ / _ \ _ __  ___ _ _ / __| |_ (_)/ _| |_   __ ___ _ _| |_ _____ _| |_ 
+| (_) | '_ \/ -_) ' \\__ \ ' \| |  _|  _| / _/ _ \ ' \  _/ -_) \ /  _|
+ \___/| .__/\___|_||_|___/_||_|_|_|  \__| \__\___/_||_\__\___/_\_\\__|
+      |_|                                                             
+EOF
+}
+
+function usage() {
+    cat <<'EOF'
+usage: oc-context <cmd>|<context>
+--------------------------------------------
+help              show usage information
+list              list all availabe contexts
+create <context>  create a new context
+edit <context>    edit config
+delete <context>  deletes a context
+[use] <context>   use a context
+create-cert       create user certificate
+EOF
+
+    exit 0
+}
+
+function read_var() {
+    cat "$1" | grep -e "^\\(export *\\)\\?$2=" | sed 's/[^=]*=\(.*\)/\1/'
+}
+
+function list() {
+    (   echo "NAME" "URL" "VERSION" "USER"
+        for p in $CFG/*; do
+            c=$(basename $p)
+            OC_URL=$(read_var "$p/env" OC_URL)
+            OC_VERSION=$(read_var "$p/env" OC_VERSION)
+            OC_USER=$(read_var "$p/env" OC_USER)
+            echo "$c" "$OC_URL" "$OC_VERSION" "$OC_USER"
+        done
+    ) | column -t
+}
+
+function select_context() {
+    [[ ! "$OC_NAME" == "" ]] && echo "Already in an OpenShift context. Please leave context first." && exit 1
+
+    OC_NAME=""
+    for p in $CFG/*; do
+        c=$(basename $p)
+        if [[ "$c" =~ .*$1.* ]]; then
+            if [[ ! "$OC_NAME" == "" ]]; then
+                echo "$1 has multiple matches. ($OC_NAME and $c)"
+                exit 1
+            fi
+            OC_NAME="$c"
+        fi
+    done
+    
+    if [[ "$OC_NAME" == "" ]]; then
+        echo "$1 not found."
+        exit 1
+    fi
+
+    source "$CFG/$OC_NAME/env"
+    clear
+    banner
+    echo ""
+    env | grep -e "^OC_" | sort | column -t -s =
+    echo ""
+}
+
+function create_cert() {
+    if [ "$OC_NAME" == "" ]; then
+        echo "OC_NAME not set. Please enter an OpenShift context first."
+        exit 1
+    fi
+
+    if ! oc auth can-i create csr &> /dev/null ; then
+        echo "Not able to create CSRs. Please login to the cluster first."
+        exit 1
+    fi
+
+    if [ "$OC_USER" == "" ]; then 
+        OC_USER=$(oc whoami)
+    fi
+
+    openssl genrsa -out $CFG/$OC_NAME/$OC_USER.key 2048
+
+    openssl req -new -key $CFG/$OC_NAME/$OC_USER.key -out $CFG/$OC_NAME/$OC_USER.csr -subj "/CN=$OC_USER"
+
+	cat <<EOF | oc create -f -
+apiVersion: certificates.k8s.io/v1beta1
+kind: CertificateSigningRequest
+metadata:
+  name: $OC_USER
+spec:
+  groups:
+  - system:authenticated
+  request: $(cat "$CFG/$OC_NAME/$OC_USER.csr" | base64 | tr -d '\n')
+  usages:
+  - digital signature
+  - key encipherment
+  - client auth
+EOF
+
+	oc adm certificate approve $OC_USER
+
+    sleep 3
+
+    oc get csr $OC_USER -o jsonpath='{.status.certificate}' | base64 -d > $CFG/$OC_NAME/$OC_USER.crt
+
+    oc delete csr $OC_USER
+
+    MASTER_URL=$(oc whoami --show-server)
+
+	oc adm create-kubeconfig --client-certificate $CFG/$OC_NAME/$OC_USER.crt --client-key $CFG/$OC_NAME/$OC_USER.key --certificate-authority $CFG/$OC_NAME/$OC_USER.crt --master=$MASTER_URL --kubeconfig $CFG/$OC_NAME/.kubeconfig
+
+	sed '/certificate-authority-data/d' -i $CFG/$OC_NAME/.kubeconfig
+    
+}
+
+function use_context() {
+    select_context "$1"
+
+    OC_PATH=$(oc-select getpath "$OC_VERSION")
+    export PATH=$OC_PATH:$PATH
+    
+    export KUBECONFIG=$CFG/$OC_NAME/.kubeconfig
+
+    export OC_NAME=$OC_NAME
+    export OC_CONTEXT_INFO="OpenShift $OC_NAME "
+    export OC_USER=$OC_USER
+    export OC_VERSION=$OC_VERSION
+
+    if [[ "$OC_USE_CLIENT_CERTIFICATE" == "true" ]]; then
+        CERTFILE=$CFG/$OC_NAME/$OC_USER.crt
+        if openssl x509 -in "$CERTFILE" -checkend 0 > /dev/null ; then
+          
+          if ! openssl x509 -in "$CERTFILE" -checkend 604800 > /dev/null ; then
+              echo "Certificate will expire in less than 7 days. Creating new certificate."
+              create_cert "$1"
+          fi
+          exec $SHELL
+        else
+          echo "Certificate is expired. Fallback to next method."
+        fi
+    fi
+
+    if [[ "$OC_TOKEN_URL" != "" ]]; then
+        which gnome-open &> /dev/null && 
+            gnome-open "$OC_TOKEN_URL"
+    else
+        password=$(eval $OC_PW_FUNCTION)
+        oc login "$OC_URL" --username=$OC_USER --password=$password
+    fi
+
+    exec $SHELL
+}
+
+function edit_context() {
+    OC_NAME=$1
+    [[ "$OC_NAME" == "" ]] && usage
+    [[ ! -e "$CFG/$OC_NAME/env" ]] && echo "Context $OC_NAME doesn't exists" && exit 1
+
+    $EDITOR "$CFG/$OC_NAME/env"
+}
+
+function create_context() {
+    OC_NAME=$1
+    [[ "$OC_NAME" == "" ]] && usage
+    [[ -e "$CFG/$OC_NAME/env" ]] && echo "Context $OC_NAME already exists" && exit 1
+
+    mkdir -p "$CFG/$OC_NAME"
+cat <<EOF > "$CFG/$OC_NAME/env"
+export OC_VERSION=4.3
+export OC_URL=api.openshift-sandbox.catalysts.digital:6443
+export OC_USER=username
+
+#OC_PW_FUNCTION="echo mypassword"
+#OC_PW_FUNCTION="systemd-ask-password password:"
+#OC_PW_FUNCTION="pass openshift/sandbox/username"
+export OC_TOKEN_URL=https://oauth-openshift.apps.openshift-sandbox.catalysts.digital/oauth/token/request
+
+# create user certificate first with 'oc-context create-certs'
+export OC_USE_CLIENT_CERTIFICATE=false
+
+# export all variables you want to have in your context
+export OC_CONSOLE=https://console.apps.openshift-sandbox.catalysts.digital
+export OC_REGISTRY=default-route-openshift-image-registry.apps.openshift-sandbox.catalysts.digital
+EOF
+
+   edit_context "$OC_NAME"
+}
+
+function delete_context() {
+    OC_NAME=$1
+    [[ "$OC_NAME" == "" ]] && usage
+    [[ ! -e "$CFG/$OC_NAME/env" ]] && echo "Context $OC_NAME doesn't exists" && exit 1
+
+    read -p "Do you really want to delete openshift context $OC_NAME? (y/N) "
+
+    ([[ "$REPLY" == "y" ]] || [[ "$REPLY" == "Y" ]]) && rm -fr "$CFG/$OC_NAME" && echo "Context $OC_NAME deleted!"
+}
+
+[[ "$1" == "" ]] && usage
+
+case "$1" in
+    list) list;;
+    help) usage;;
+    create) create_context "$2";;
+    edit) edit_context "${2-$OC_NAME}";;
+    delete) delete_context "$2";;
+    use) use_context "$2";;
+    create-cert) create_cert;;
+    *) use_context "$1";;
+esac
