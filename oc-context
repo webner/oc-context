@@ -187,7 +187,7 @@ export OC_USER=username
 #OC_PW_FUNCTION="pass openshift/sandbox/username"
 export OC_TOKEN_URL=https://oauth-openshift.apps.openshift-sandbox.catalysts.digital/oauth/token/request
 
-# create user certificate first with 'oc-context create-certs'
+# create user certificate first with 'oc-context create-cert'
 export OC_USE_CLIENT_CERTIFICATE=false
 
 # export all variables you want to have in your context

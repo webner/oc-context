@@ -37,13 +37,26 @@ The configuration for a context is stored in a file located at $HOME/.config/oc-
 With the following command a new context `dev` will be created and the `env` file will be opened in your $EDITOR
 
 ```
-oc-context create dev
+$ oc-context create dev
 ```
 
 ## Use an OpenShift context
 
 ```
-oc-context dev
+$ oc-context dev
+
+  ___                 ___ _    _  __ _                _           _
+ / _ \ _ __  ___ _ _ / __| |_ (_)/ _| |_   __ ___ _ _| |_ _____ _| |_
+| (_) | '_ \/ -_) ' \\__ \ ' \| |  _|  _| / _/ _ \ ' \  _/ -_) \ /  _|
+ \___/| .__/\___|_||_|___/_||_|_|_|  \__| \__\___/_||_\__\___/_\_\\__|
+      |_|
+
+OC_CONSOLE                 https://openshift-dev.example.org/settings/cluster
+OC_REGISTRY                openshift-dev-registry.example.org
+OC_TOKEN_URL               https://oauth-openshift.example.org/oauth/token/request
+OC_URL                     openshift-dev.example.org:6443
+OC_USER                    webner
+OC_VERSION                 4.3
 ```
 
 This command will:
@@ -58,7 +71,4 @@ This command will:
  - Print all exported variabled beginning with "OC_"
  - Fork your $SHELL
  
-
-
-
 
