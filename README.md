@@ -65,9 +65,6 @@ This command will:
  - Set KUBECONFIG to $HOME/.config/oc-context/$OC_NAME/.kubeconfig
  - Print all exported variabled beginning with "OC_"
  - Set OC_CONTEXT_NAME to "OpenShift $OC_NAME "
- - If OC_USER_CLIENT_CERTIFICATE is set to `true`:
-   - Recreate the client certificate if it will expire in less than 7 days
- - Evaluate $OC_PW_FUNCTION and login to OpenShift with your $OC_USER
- - Fork your $SHELL
+ - Login to the cluster with client certificate or password.
+ - Fork a new $SHELL
  
-
