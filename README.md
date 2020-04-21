@@ -33,15 +33,14 @@ create-cert       create user certificate
 ```
 
 ## Create a new OpenShift context
-The configuration for a context is stored in a file located at $HOME/.config/oc-context/$OC_NAME/env
-With the following command a new context `dev` will be created and the `env` file will be opened in your $EDITOR
+The configuration for a context is stored in the file `$HOME/.config/oc-context/$OC_NAME/env`. With the following command a new context `dev` will be created and the `env` file will be opened in your $EDITOR.
 
 ```
 $ oc-context create dev
 ```
 
 ## Import an OpenShift context
-The prefered way to create new context is to first connect to the OpenShift cluster and than run the import command. With this method most of the settings will be automatically discovered.
+The preferred way to create new context is to first connect to the OpenShift cluster and than run the import command. With this method most of the settings will be automatically discovered.
 
 ```
 $ oc login
