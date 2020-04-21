@@ -40,6 +40,14 @@ With the following command a new context `dev` will be created and the `env` fil
 $ oc-context create dev
 ```
 
+## Import an OpenShift context
+The prefered way to create new context is to first connect to the OpenShift cluster and than run the import command. With this method most of the settings will be automatically discovered.
+
+```
+$ oc login
+$ oc-context import dev
+```
+
 ## Use an OpenShift context
 
 ```
@@ -64,7 +72,18 @@ This command will:
  - Add the oc client tool in the version specified in OC_VERSION to your path
  - Set KUBECONFIG to $HOME/.config/oc-context/$OC_NAME/.kubeconfig
  - Print all exported variabled beginning with "OC_"
- - Set OC_CONTEXT_NAME to "OpenShift $OC_NAME "
  - Login to the cluster with client certificate or password.
  - Fork a new $SHELL
- 
+
+
+## Show current context in your shell
+
+For ZSH add following to $HOME/.zshrc
+```
+export PROMPT="$OC_CONTEXT_INFO$PROMPT"
+```
+
+For Bash add following to $HOME/.bashrc
+```
+export PS1="$OC_CONTEXT_INFO$PS1" 
+```

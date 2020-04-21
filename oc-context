@@ -220,12 +220,13 @@ function import_context() {
     [[ -e "$CFG/$OC_NAME/env" ]] && echo "Context $OC_NAME already exists" && exit 1
 
     mkdir -p "$CFG/$OC_NAME"
-    touch "$CFG/$OC_NAME/.kubeconfig"
+    OC_URL=$(oc whoami --show-server)
+    OC_USER=$(oc whoami)
 
 cat <<EOF > "$CFG/$OC_NAME/env"
 export OC_VERSION=$(discover_version)
-export OC_URL=$(oc whoami --show-server)
-export OC_USER=$(oc whoami)
+export OC_URL=$OC_URL
+export OC_USER=$OC_USER
 
 #OC_PW_FUNCTION="echo my_insecure_password"
 #OC_PW_FUNCTION="systemd-ask-password password:"
@@ -239,6 +240,10 @@ export OC_USE_CLIENT_CERTIFICATE=false
 export OC_CONSOLE=$(oc whoami --show-server)
 export OC_REGISTRY=$(discover_registry)
 EOF
+    if oc whoami -t &> /dev/null ; then
+        #initialize kubeconfig with current token
+        oc login --kubeconfig="$CFG/$OC_NAME/.kubeconfig" --server=$OC_URL --token=$(oc whoami -t) &> /dev/null
+    fi
 
    edit_context "$OC_NAME"
 }
