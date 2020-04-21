@@ -199,8 +199,14 @@ EOF
 }
 
 function discover_version() {
-    oc version | grep "Server Version:" | sed 's/Server Version: \([^.]*\.[^.]*\).*/\1/' ||
-    oc version | grep "Kubernetes Version" |  sed 's/Kubernetes Version: v1\.\([^.]*\).*/3.\1/'
+    VERSION=$(oc version | grep "Kubernetes Version" |  sed 's/Kubernetes Version: v1\.\([^.]*\).*/3.\1/')
+    case $VERSION in 
+        3.13) echo "4.1";;
+        3.14) echo "4.2";;
+        3.16) echo "4.3";;
+        3.17) echo "4.4";;
+        *) echo "$VERSION";;
+    esac
 }
 
 function discover_token_url() {
