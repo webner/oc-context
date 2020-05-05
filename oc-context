@@ -59,7 +59,12 @@ function select_context() {
                 echo "$1 has multiple matches. ($OC_NAME and $c)"
                 exit 1
             fi
+
             OC_NAME="$c"
+            #exact match
+            if [[ "$c" == "$1" ]]; then
+                break
+            fi
         fi
     done
     
@@ -128,7 +133,7 @@ EOF
 function use_context() {
     select_context "$1"
 
-    OC_PATH=$(oc-select getpath "$OC_VERSION")
+    OC_PATH=$(oc-select path "$OC_VERSION")
     export PATH=$OC_PATH:$PATH
     
     export KUBECONFIG=$CFG/$OC_NAME/.kubeconfig
@@ -157,7 +162,7 @@ function use_context() {
     fi
 
     if oc whoami &>/dev/null; then
-        oc project
+        oc project || true
     fi
 
     exec $SHELL
